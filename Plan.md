@@ -81,6 +81,8 @@ interface TypeSchema {
   icon?: string;
   /** Subfolder name within the ghost root for this type's ghost files */
   folder?: string;
+  /** Property key used as the displayed filename (e.g., 'title', 'name'). Defaults to 'title'. */
+  displayProperty?: string;
   /** Ordered list of property definitions */
   properties: PropertyDefinition[];
 }
@@ -100,6 +102,8 @@ interface PropertyDefinition {
   options?: SelectOption[];
   /** For relation types — target type ID */
   relationType?: string;
+  /** For relation types — single [[link]] or list of [[links]] */
+  relationCardinality?: 'single' | 'multi';
   /** Column width hint for Bases table views */
   columnWidth?: number;
   /** Whether to hide this column from the default Bases view */
@@ -117,7 +121,7 @@ type PropertyType =
   | 'tags'         // Obsidian-native tags property
   | 'url'          // stored as text, rendered as clickable link
   | 'aliases'      // Obsidian-native aliases property
-  | 'relation'     // stored as [[wiki-link]] text, constrained to target type
+  | 'relation'     // single: stored as [[wiki-link]] text; multi: stored as list of [[wiki-links]]
   | 'list';        // plain YAML list
 
 interface SelectOption {
@@ -148,6 +152,7 @@ id: book
 name: Book
 icon: lucide-book-open
 folder: books
+displayProperty: title
 properties:
   - key: title
     displayName: Title
@@ -227,8 +232,8 @@ That's the entire file. No body.
 - Each type gets a subfolder: `<ghost-root>/books/`, `<ghost-root>/recipes/`, etc.
 
 **File naming:**
-- Default: `YYYYMMDDHHmm.md` (e.g., `202603081430.md`)
-- Optional slug suffix: `YYYYMMDDHHmm-clean-code.md` (slug derived from `title` property, sanitized for filename safety)
+- Default: `YYYYMMDDHHmmss.md` (e.g., `20260308143025.md`)
+- Optional slug suffix: `YYYYMMDDHHmmss-clean-code.md` (slug derived from the `displayProperty` value, sanitized for filename safety)
 - The user relies on the **Front Matter Title** plugin to display the `title` property as the visible filename, so real filenames are secondary.
 
 **Detection heuristic:** A note is a "ghost" if its body content (everything after the closing `---`) is empty or whitespace-only. This is a runtime check used for visual distinction (dimmed icon, badge, etc.).
@@ -263,7 +268,9 @@ Future phases will add auto-generation and deeper Bases integration.
 | 1.6 | **Schema evolution — add/remove fields** | Add a new property → backfill across all notes of that type. Remove a property → clear value if not required, block if required and in use. |
 | 1.7 | **Schema evolution — rename fields** | Rename a property key across all notes of that type. |
 | 1.8 | **Bulk update preview + confirmation** | Before any schema change touches files, show a preview: "This will modify N notes. Fields affected: ..." User confirms or cancels. |
-| 1.9 | **Settings tab** | Plugin settings: ghost root folder, slug suffix toggle, promotion behavior, type list overview. |
+| 1.9 | **Delete type** | Delete a type schema. Existing notes keep their `type` field as-is (orphaned). |
+| 1.10 | **Reload types** | Command to re-read schema files from disk, for users who hand-edit YAML. Schemas also reload on plugin start. |
+| 1.11 | **Settings tab** | Plugin settings: ghost root folder, slug suffix toggle, promotion behavior, type list overview. |
 
 ### Phase 2 — Visual Polish & Bases Helpers
 
@@ -280,7 +287,7 @@ Future phases will add auto-generation and deeper Bases integration.
 
 | # | Feature | Description |
 |---|---------|-------------|
-| 3.1 | **Relations between types** | Structured `relation` property stored as `[[wiki-link]]`. Schema declares target type. Type-constrained note picker. |
+| 3.1 | **Relations between types** | Structured `relation` property with `single` (one `[[link]]`) or `multi` (list of `[[links]]`) cardinality. Schema declares target type. Type-constrained note picker. |
 | 3.2 | **Dot-notation property traversal** | Access related type properties (e.g., `interview-step.vacancy.name`) — depends on custom Bases view or future Bases custom functions API. |
 | 3.3 | **Embedded filtered views** | Typed notes embed Bases views filtered to related records (e.g., vacancy embeds its interview steps). |
 | 3.4 | **Custom Bases view type** | Register a plugin-provided Bases view via `registerBasesView()` for type-aware rendering. |
@@ -481,17 +488,18 @@ async function createTypedNote(
     }
   }
 
-  // Add title to frontmatter (for Front Matter Title plugin)
-  if (title && !frontmatter['title']) {
-    frontmatter['title'] = title;
+  // Add display property value to frontmatter (for Front Matter Title plugin)
+  const displayProp = schema.displayProperty || 'title';
+  if (title && !frontmatter[displayProp]) {
+    frontmatter[displayProp] = title;
   }
 
   // Build YAML
   const yaml = stringifyYaml(frontmatter);
   const content = `---\n${yaml}---\n`;
 
-  // Generate filename: YYYYMMDDHHmm or YYYYMMDDHHmm-slug
-  const timestamp = formatTimestamp(new Date()); // "202603081430"
+  // Generate filename: YYYYMMDDHHmmss or YYYYMMDDHHmmss-slug
+  const timestamp = formatTimestamp(new Date()); // "20260308143025"
   const slug = plugin.settings.useSlugSuffix ? `-${slugify(title)}` : '';
   const fileName = `${timestamp}${slug}`;
   const filePath = `${folder ? folder + '/' : ''}${fileName}.md`;
@@ -505,7 +513,8 @@ function formatTimestamp(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0');
   const h = String(date.getHours()).padStart(2, '0');
   const mi = String(date.getMinutes()).padStart(2, '0');
-  return `${y}${mo}${d}${h}${mi}`;
+  const s = String(date.getSeconds()).padStart(2, '0');
+  return `${y}${mo}${d}${h}${mi}${s}`;
 }
 
 function slugify(text: string): string {
@@ -613,7 +622,9 @@ All UI uses Obsidian's native primitives:
 | "Typed Notes: Create typed note" | Type picker → title prompt → create note |
 | "Typed Notes: Create ghost note" | Type picker → title prompt → create ghost file |
 | "Typed Notes: Apply schema changes" | Type picker → show diff → confirm → bulk update |
+| "Typed Notes: Delete note type" | Type picker → confirm → delete schema file. Existing notes keep their `type` field as-is. |
 | "Typed Notes: Set note type" | Type picker → assign type to current note |
+| "Typed Notes: Reload types" | Re-read all `.yaml` files from `.obsidian/note-types/` and rebuild index |
 
 **Schema editor modal flow:**
 
@@ -624,6 +635,7 @@ All UI uses Obsidian's native primitives:
 │  ID:   book                                  │
 │  Name: Book                                  │
 │  Icon: 📖 [Change...]                        │
+│  Display as: title  [▼]                      │
 │  Ghost folder: books                         │
 │                                              │
 │  Properties:                                 │
@@ -794,18 +806,25 @@ Summary of all design decisions made during planning.
 |---|----------|----------|
 | 1 | Plugin name | **Typed Notes** |
 | 2 | Schema storage | `.yaml` files in `.obsidian/note-types/` |
-| 3 | Ghost file folders | User-defined ghost root (default: Obsidian's new note location), subfolders per type. Filenames: `YYYYMMDDHHmm.md` with optional slug suffix. Optional move on promotion. |
+| 3 | Ghost file folders | User-defined ghost root (default: Obsidian's new note location), subfolders per type. Filenames: `YYYYMMDDHHmmss.md` with optional slug suffix. Optional move on promotion. |
 | 4 | Schema editor UI | Modal, accessed via command palette ("Add new note type" / "Edit existing note type") |
 | 5 | Select/multiselect options | Color (Obsidian-style, randomly assigned) + manual sort order. Removal: clear value if not required, block if required and in use. No auto-discovery. |
 | 6 | Formulas | Deferred — use Bases' native formula system |
 | 7 | Type icons | Lucide icon picker |
-| 8 | Relations | Structured: schema declares target type, stored as `[[wiki-link]]`, type-constrained picker. Goal: dot-notation traversal (`vacancy.name`). Phase 3. |
+| 8 | Relations | Structured: schema declares target type + cardinality (`single`/`multi`), stored as `[[wiki-link]]`(s), type-constrained picker. Goal: dot-notation traversal (`vacancy.name`). Phase 3. |
 | 9 | Bases integration | Light for MVP (user creates `.base` files manually). Deep integration in Phase 3. |
 | 10 | Type assignment | Auto-detect: any note with `type: <known-id>` is managed, regardless of origin. |
 | 11 | Column types | `text`, `number`, `checkbox`, `date`, `datetime`, `select`, `multiselect`, `tags`, `url`, `aliases`, `relation`, `list` |
 | 12 | Min Obsidian version | Latest only (1.10+), no backwards compatibility |
 | 13 | Bulk update errors | Skip and continue — process all files, collect errors, report at the end |
 | 14 | Template integration | Out of scope — plugin manages frontmatter only |
+| 15 | Filename collision | Timestamps include seconds (`YYYYMMDDHHmmss`) |
+| 16 | Deleting a type | Delete schema file only. Existing notes keep `type` field as-is. |
+| 17 | `type` property key | Hard contract on `type` for now. May become configurable later. |
+| 18 | Display property | Per-type `displayProperty` setting (defaults to `title`). Used for slug suffix and Front Matter Title. |
+| 19 | Schema hot-reload | Load on plugin start only. Manual "Reload types" command available. |
+| 20 | Relation cardinality | `single` (one `[[link]]`) or `multi` (list of `[[links]]`) per relation property. |
+| 21 | Property reordering | Supported in schema editor via drag-to-reorder. Order is persisted in schema YAML. |
 
 ---
 
@@ -837,7 +856,7 @@ Week 5-6: UI
 ├── Type picker modal: SuggestModal with note counts
 ├── Bulk update preview modal: show diff, confirm/cancel
 ├── Settings tab: ghost root, slug suffix, promotion settings
-├── Commands: all 6 command palette entries
+├── Commands: all 8 command palette entries
 └── Context menu: "Set type" on right-click
 
 Week 7: Testing & polish
@@ -847,7 +866,7 @@ Week 7: Testing & polish
 └── Documentation: README, settings descriptions
 ```
 
-**Milestone:** User can define a "Book" type with 5 properties, create 50 ghost book notes (as `YYYYMMDDHHmm.md` files in `_data/books/`), add a new "genre" field, and have it backfilled across all 50 notes in one action.
+**Milestone:** User can define a "Book" type with 5 properties, create 50 ghost book notes (as `YYYYMMDDHHmmss.md` files in `_data/books/`), add a new "genre" field, and have it backfilled across all 50 notes in one action.
 
 ### Phase 2: Visual Polish & Bases Helpers
 **Goal:** Typed notes are visually distinguished and Bases usage is streamlined.
