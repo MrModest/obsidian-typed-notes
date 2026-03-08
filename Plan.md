@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-**Typed Notes** (working title — see [OQ-1](#oq-1)) adds a **type system** to Obsidian notes. A "type" is a named schema (e.g., `book`, `recipe`, `job-vacancy`) that declares the properties a note should have, their data types, defaults, validation, and display hints. Notes bind to a type via a single frontmatter field (`type: book`). The plugin then enforces, auto-populates, bulk-updates, and visually distinguishes notes by type.
+**Typed Notes** adds a **type system** to Obsidian notes. A "type" is a named schema (e.g., `book`, `recipe`, `job-vacancy`) that declares the properties a note should have, their data types, defaults, validation, and display hints. Notes bind to a type via a single frontmatter field (`type: book`). The plugin then enforces, auto-populates, bulk-updates, and visually distinguishes notes by type.
 
 ### Why it exists
 
@@ -29,39 +29,39 @@ Obsidian has **templates** but no **schemas**. Once a note is created from a tem
 ## 2. Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Plugin Core                          │
-│  main.ts — Plugin lifecycle, command registration, events   │
-├──────────┬──────────┬───────────┬──────────┬────────────────┤
-│ Schema   │Frontmatter│  Note    │   UI     │  Bases         │
-│ Engine   │ Manager   │ Manager  │  Layer   │  Integration   │
-├──────────┼──────────┼───────────┼──────────┼────────────────┤
-│- Load/   │- Surgical │- Create  │- Schema  │- Auto-generate │
-│  save    │  edits    │  notes   │  editor  │  .base files   │
-│  schemas │- Bulk     │- Ghost   │- Type    │- Custom view   │
-│- Validate│  updates  │  files   │  picker  │  types (later) │
-│- Diff    │- Type     │- Promote │- Icons   │- Embed filters │
-│  changes │  coercion │  ghosts  │- Modals  │                │
-└──────────┴──────────┴───────────┴──────────┴────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                        Plugin Core                            │
+│  main.ts — Plugin lifecycle, command registration, events     │
+├──────────┬─────────────┬──────────┬──────────┬────────────────┤
+│ Schema   │ Frontmatter │  Note    │   UI     │  Bases         │
+│ Engine   │ Manager     │ Manager  │  Layer   │  Integration   │
+├──────────┼─────────────┼──────────┼──────────┼────────────────┤
+│- Load/   │- Surgical   │- Create  │- Schema  │- (Light for    │
+│  save    │  edits      │  notes   │  editor  │   now: user    │
+│  schemas │- Bulk       │- Ghost   │  modal   │   creates      │
+│- Validate│  updates    │  files   │- Type    │   .base files  │
+│- Diff    │- Skip &     │- Promote │  picker  │   manually)    │
+│  changes │  continue   │  ghosts  │- Icons   │                │
+└──────────┴─────────────┴──────────┴──────────┴────────────────┘
          │                │               │
          ▼                ▼               ▼
-   Schema Storage    Obsidian Vault    Obsidian API
-   (see OQ-2)        (.md files)      (MetadataCache,
-                                       FileManager,
-                                       Workspace)
+   .obsidian/          Obsidian Vault    Obsidian API
+   note-types/         (.md files)      (MetadataCache,
+   (YAML schemas)                       FileManager,
+                                        Workspace)
 ```
 
 ### Component Responsibilities
 
-**Schema Engine** — Loads type definitions from storage, validates them, computes diffs when a schema changes ("field `rating` was added", "field `status` was renamed to `progress`"), and produces a changeset for the Frontmatter Manager.
+**Schema Engine** — Loads type definitions from `.obsidian/note-types/*.yaml`, validates them, computes diffs when a schema changes ("field `rating` was added", "field `status` was renamed to `progress`"), and produces a changeset for the Frontmatter Manager.
 
-**Frontmatter Manager** — The only component that touches file content. Wraps `app.fileManager.processFrontMatter()` for single-file edits and provides a batch executor for bulk updates with progress reporting and error collection.
+**Frontmatter Manager** — The only component that touches file content. Wraps `app.fileManager.processFrontMatter()` for single-file edits and provides a batch executor for bulk updates with progress reporting and error collection (skip-and-continue strategy).
 
-**Note Manager** — Handles note creation (full notes and ghost files), type assignment, and the index of which notes belong to which type (backed by MetadataCache queries).
+**Note Manager** — Handles note creation (full notes and ghost files), type assignment, ghost-to-full promotion (optional folder move), and the index of which notes belong to which type (backed by MetadataCache queries).
 
-**UI Layer** — All user-facing surfaces: schema editor, type picker modal, settings tab, file explorer decorations. Built entirely on Obsidian's native `Modal`, `Setting`, `Menu`, `setIcon`, and `ItemView` primitives.
+**UI Layer** — All user-facing surfaces: schema editor modal, type picker modal, settings tab, file explorer decorations. Built entirely on Obsidian's native `Modal`, `Setting`, `Menu`, `setIcon`, and related primitives.
 
-**Bases Integration** — Generates and maintains `.base` configuration files for each type, and (in later phases) registers custom Bases view types via `this.registerBasesView()`.
+**Bases Integration** — Light for MVP: plugin manages schemas only, users create `.base` files manually. Future phases add auto-generation and custom Bases view types.
 
 ---
 
@@ -77,9 +77,9 @@ interface TypeSchema {
   id: string;
   /** Human-readable display name */
   name: string;
-  /** Lucide icon name or custom icon ID — see OQ-7 */
+  /** Lucide icon name for visual distinction */
   icon?: string;
-  /** Folder for ghost files created under this type — see OQ-3 */
+  /** Subfolder name within the ghost root for this type's ghost files */
   folder?: string;
   /** Ordered list of property definitions */
   properties: PropertyDefinition[];
@@ -90,15 +90,15 @@ interface PropertyDefinition {
   key: string;
   /** Display name shown in UI and Bases column headers */
   displayName?: string;
-  /** Data type — see OQ-11 for full list */
+  /** Data type */
   type: PropertyType;
   /** Default value (used when creating new notes or backfilling) */
   default?: unknown;
   /** Whether the property is required (shown in validation) */
   required?: boolean;
-  /** For 'select' / 'multiselect' types — see OQ-5 */
+  /** For 'select' / 'multiselect' types */
   options?: SelectOption[];
-  /** For relation types — target type ID — see OQ-8 */
+  /** For relation types — target type ID */
   relationType?: string;
   /** Column width hint for Bases table views */
   columnWidth?: number;
@@ -112,24 +112,74 @@ type PropertyType =
   | 'checkbox'
   | 'date'
   | 'datetime'
-  | 'select'
-  | 'multiselect'
-  | 'tags'      // Obsidian-native tags property
-  | 'url'
-  | 'aliases'   // Obsidian-native aliases property
-  | 'relation'  // [[wiki-link]] to another typed note — see OQ-8
-  | 'list';     // plain YAML list
+  | 'select'       // stored as text in YAML, constrained options in UI
+  | 'multiselect'  // stored as list in YAML, constrained options in UI
+  | 'tags'         // Obsidian-native tags property
+  | 'url'          // stored as text, rendered as clickable link
+  | 'aliases'      // Obsidian-native aliases property
+  | 'relation'     // stored as [[wiki-link]] text, constrained to target type
+  | 'list';        // plain YAML list
 
 interface SelectOption {
   value: string;
-  color?: string;  // see OQ-5
-  order?: number;
+  /** Obsidian-style color, randomly assigned on creation */
+  color?: string;
+  /** Manual sort order — used when sorting by this select column */
+  order: number;
 }
 ```
 
-> **Storage format and location are [OQ-2](#oq-2).** The schema could be persisted as `.yaml` files, special `.md` files, or within plugin data. The in-memory model above is format-agnostic.
+### 3.2 Schema Storage
 
-### 3.2 Note–Type Binding
+Schemas are stored as individual `.yaml` files in `.obsidian/note-types/`:
+
+```
+.obsidian/
+  note-types/
+    book.yaml
+    recipe.yaml
+    job-vacancy.yaml
+```
+
+Example `book.yaml`:
+
+```yaml
+id: book
+name: Book
+icon: lucide-book-open
+folder: books
+properties:
+  - key: title
+    displayName: Title
+    type: text
+    required: true
+  - key: author
+    displayName: Author
+    type: text
+  - key: status
+    displayName: Status
+    type: select
+    default: to-read
+    options:
+      - value: to-read
+        color: yellow
+        order: 1
+      - value: reading
+        color: blue
+        order: 2
+      - value: read
+        color: green
+        order: 3
+  - key: rating
+    displayName: Rating
+    type: number
+  - key: tags
+    type: tags
+```
+
+This keeps schemas out of the user's content space, is human-readable, and version-controllable if the user tracks `.obsidian/` in git.
+
+### 3.3 Note–Type Binding
 
 A note is bound to a type by a single frontmatter property:
 
@@ -143,7 +193,7 @@ status: read
 ---
 ```
 
-The `type` field is the **only** contract. The plugin discovers typed notes by querying MetadataCache for all files whose frontmatter `type` matches a known schema ID.
+The `type` field is the **only** contract. The plugin **auto-detects** typed notes — any note with `type: <known-id>` in frontmatter is treated as typed, regardless of how it got there. Users can hand-write `type: book` in any note.
 
 ```typescript
 // Finding all notes of a given type
@@ -155,7 +205,7 @@ function getNotesOfType(app: App, typeId: string): TFile[] {
 }
 ```
 
-### 3.3 Ghost Files
+### 3.4 Ghost Files
 
 Ghost files are minimal `.md` files containing only frontmatter (no body content). They are real Obsidian files — indexed, linkable, searchable — but represent "data-only" records.
 
@@ -169,45 +219,33 @@ status: to-read
 ---
 ```
 
-That's the entire file. No body. The plugin creates these in a configurable folder (see [OQ-3](#oq-3)).
+That's the entire file. No body.
 
-**Detection heuristic:** A note is a "ghost" if its body content (everything after the closing `---`) is empty or whitespace-only. This is not stored in the schema — it's a runtime check used purely for visual distinction (dimmed icon, badge, etc.).
+**Folder structure:**
+- User configures a **ghost root directory** in plugin settings
+- Default: subfolder within Obsidian's built-in "Default location for new notes" setting
+- Each type gets a subfolder: `<ghost-root>/books/`, `<ghost-root>/recipes/`, etc.
 
-**Promotion:** When a user starts writing prose below the frontmatter, the note silently transitions from "ghost" to "full note." No explicit action required — the body is no longer empty, so the visual indicators update automatically.
+**File naming:**
+- Default: `YYYYMMDDHHmm.md` (e.g., `202603081430.md`)
+- Optional slug suffix: `YYYYMMDDHHmm-clean-code.md` (slug derived from `title` property, sanitized for filename safety)
+- The user relies on the **Front Matter Title** plugin to display the `title` property as the visible filename, so real filenames are secondary.
 
-### 3.4 .base File Generation
+**Detection heuristic:** A note is a "ghost" if its body content (everything after the closing `---`) is empty or whitespace-only. This is a runtime check used for visual distinction (dimmed icon, badge, etc.).
 
-For each type, the plugin can generate a corresponding `.base` file that provides a default table view of all notes of that type. Example for `book`:
+**Promotion:** When a user writes prose below the frontmatter, the note silently transitions from "ghost" to "full note." Optionally (user setting), the plugin moves the file out of the ghost folder to a configurable location (e.g., the vault's default new note location or a per-type "full notes" folder).
+
+### 3.5 .base File Integration (Light — MVP)
+
+For MVP, the plugin does **not** auto-generate `.base` files. Users create Bases manually. The plugin provides a "Copy filter for this type" helper command that puts the correct filter snippet on the clipboard:
 
 ```yaml
-# Auto-generated by Typed Notes. Manual edits are preserved on regeneration.
 filters:
   and:
     - 'type = "book"'
-    - file.inFolder("_data/books")  # if ghost folder is configured
-
-properties:
-  title:
-    displayName: Title
-  author:
-    displayName: Author
-  rating:
-    displayName: Rating
-  status:
-    displayName: Status
-
-views:
-  - type: table
-    name: "All Books"
-    order:
-      - file.name
-      - note.title
-      - note.author
-      - note.rating
-      - note.status
 ```
 
-> **Depth of Bases integration is [OQ-9](#oq-9).**
+Future phases will add auto-generation and deeper Bases integration.
 
 ---
 
@@ -217,36 +255,40 @@ views:
 
 | # | Feature | Description |
 |---|---------|-------------|
-| 1.1 | **Schema definition** | Define types with properties, types, defaults. Persistent storage. |
-| 1.2 | **Schema editor UI** | Visual interface for creating/editing type schemas — see [OQ-4](#oq-4) |
+| 1.1 | **Schema definition** | Define types with properties, types, defaults. Stored as `.yaml` in `.obsidian/note-types/`. |
+| 1.2 | **Schema editor modal** | Command palette → "Add new note type" → type ID → modal for property editing. "Edit existing note type" → type picker → modal. |
 | 1.3 | **Note creation** | Create a new note of a given type (command palette + modal). Auto-populates frontmatter from schema. |
-| 1.4 | **Ghost file creation** | Create data-only records in designated folders. |
-| 1.5 | **Type detection** | Index existing notes by scanning frontmatter `type` field. React to MetadataCache changes. |
-| 1.6 | **Schema evolution — add/remove fields** | Add a new property → backfill across all notes of that type. Remove a property → optionally strip from notes. |
+| 1.4 | **Ghost file creation** | Create data-only records in `<ghost-root>/<type>/` with timestamp filenames. |
+| 1.5 | **Type detection** | Auto-detect: index all notes by scanning frontmatter `type` field. React to MetadataCache changes. |
+| 1.6 | **Schema evolution — add/remove fields** | Add a new property → backfill across all notes of that type. Remove a property → clear value if not required, block if required and in use. |
 | 1.7 | **Schema evolution — rename fields** | Rename a property key across all notes of that type. |
 | 1.8 | **Bulk update preview + confirmation** | Before any schema change touches files, show a preview: "This will modify N notes. Fields affected: ..." User confirms or cancels. |
-| 1.9 | **Settings tab** | Plugin settings: default ghost folder, type list overview, global preferences. |
+| 1.9 | **Settings tab** | Plugin settings: ghost root folder, slug suffix toggle, promotion behavior, type list overview. |
 
-### Phase 2 — Bases Integration & Visual Polish
-
-| # | Feature | Description |
-|---|---------|-------------|
-| 2.1 | **Auto-generate .base files** | When a type is created, optionally generate a `.base` file with default table view. |
-| 2.2 | **Type-specific icons** | Show type icons in file explorer via CSS decorations or vault file icon overrides — see [OQ-7](#oq-7) |
-| 2.3 | **Ghost file visual indicators** | Distinguish ghost notes from full notes (dimmed, badge, or icon variant). |
-| 2.4 | **Type picker in note creation** | Enhanced "new note" flow: pick a type from a searchable list, then create with pre-filled frontmatter. |
-| 2.5 | **Validation indicators** | When viewing a typed note, surface warnings for missing required fields or type mismatches (e.g., status bar, notice). |
-
-### Phase 3 — Relations & Advanced Features
+### Phase 2 — Visual Polish & Bases Helpers
 
 | # | Feature | Description |
 |---|---------|-------------|
-| 3.1 | **Relations between types** | Explicit `relation` property type linking to notes of a specific type — see [OQ-8](#oq-8) |
-| 3.2 | **Embedded filtered views** | Typed notes can embed a Bases view filtered to related records (e.g., job vacancy embeds its interview steps). |
-| 3.3 | **Type coercion on schema change** | When changing a property's type (text → select, text → number), prompt for conversion rules. |
-| 3.4 | **Custom Bases view type** | Register a plugin-provided Bases view via `registerBasesView()` for richer typed-note display. |
-| 3.5 | **Formulas** | Formula support — see [OQ-6](#oq-6). Likely deferred to Bases' native formula system. |
-| 3.6 | **Template integration** | Interop with Obsidian Templates / Templater — see [OQ-14](#oq-14) |
+| 2.1 | **Type-specific icons** | Lucide icon picker in schema editor. Show type icons in file explorer via CSS decorations. |
+| 2.2 | **Ghost file visual indicators** | Distinguish ghost notes from full notes (dimmed, badge, or icon variant). |
+| 2.3 | **Type picker in note creation** | Enhanced "new note" flow: pick a type from a searchable list with icons and property preview. |
+| 2.4 | **Validation indicators** | Surface warnings for missing required fields or type mismatches (status bar, notice). |
+| 2.5 | **Select/multiselect UI** | Color-tagged options with manual ordering, Obsidian-style palette, random color assignment. |
+| 2.6 | **Bases helpers** | "Copy filter for this type" command. Documentation/guidance for setting up Bases views. |
+
+### Phase 3 — Relations & Advanced Bases
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 3.1 | **Relations between types** | Structured `relation` property stored as `[[wiki-link]]`. Schema declares target type. Type-constrained note picker. |
+| 3.2 | **Dot-notation property traversal** | Access related type properties (e.g., `interview-step.vacancy.name`) — depends on custom Bases view or future Bases custom functions API. |
+| 3.3 | **Embedded filtered views** | Typed notes embed Bases views filtered to related records (e.g., vacancy embeds its interview steps). |
+| 3.4 | **Custom Bases view type** | Register a plugin-provided Bases view via `registerBasesView()` for type-aware rendering. |
+| 3.5 | **Auto-generate .base files** | Optionally generate a default `.base` file per type with table view, filters, and columns. |
+| 3.6 | **Type coercion on schema change** | When changing a property's type (text → select, text → number), prompt for conversion rules. |
+| 3.7 | **Import/export schemas** | Share type definitions between vaults. |
+
+**Explicitly out of scope:** Formulas (defer to Bases' native formula system), template integration (plugin manages frontmatter only, not note body content).
 
 ---
 
@@ -258,7 +300,7 @@ views:
 
 ```typescript
 async onload() {
-  this.schemas = await this.loadSchemas(); // from storage — OQ-2
+  this.schemas = await this.loadSchemas();
 
   // React to frontmatter changes to keep the type index fresh
   this.registerEvent(
@@ -276,12 +318,44 @@ async onload() {
 }
 ```
 
+**Schema loading from `.obsidian/note-types/`:**
+
+```typescript
+async loadSchemas(): Promise<TypeSchema[]> {
+  const schemasPath = `${this.app.vault.configDir}/note-types`;
+  const schemas: TypeSchema[] = [];
+
+  // Ensure directory exists
+  if (!await this.app.vault.adapter.exists(schemasPath)) {
+    await this.app.vault.adapter.mkdir(schemasPath);
+    return schemas;
+  }
+
+  const files = await this.app.vault.adapter.list(schemasPath);
+  for (const filePath of files.files) {
+    if (filePath.endsWith('.yaml')) {
+      const content = await this.app.vault.adapter.read(filePath);
+      const schema = parseYaml(content) as TypeSchema;
+      schemas.push(schema);
+    }
+  }
+
+  return schemas;
+}
+
+async saveSchema(schema: TypeSchema): Promise<void> {
+  const path = `${this.app.vault.configDir}/note-types/${schema.id}.yaml`;
+  const content = stringifyYaml(schema);
+  await this.app.vault.adapter.write(path, content);
+}
+```
+
 **Schema diffing:** When the user modifies a schema, the engine computes a diff:
 
 ```typescript
 interface SchemaDiff {
   added: PropertyDefinition[];       // new properties to backfill
-  removed: string[];                 // property keys to optionally strip
+  removed: string[];                 // property keys to strip or block
   renamed: { from: string; to: string }[];  // keys to rename
   typeChanged: { key: string; from: PropertyType; to: PropertyType }[];
   defaultChanged: { key: string; newDefault: unknown }[];
@@ -291,6 +365,10 @@ function diffSchemas(before: TypeSchema, after: TypeSchema): SchemaDiff;
 ```
 
 Each diff category maps to a specific frontmatter operation. The UI presents this diff to the user before executing.
+
+**Select option removal rules:**
+- If a select option is removed and the property is **not required**: clear the value from all notes that have it
+- If a select option is removed and the property is **required**: block removal until no notes use that option value (show count of affected notes)
 
 ### 5.2 Frontmatter Manager
 
@@ -340,7 +418,7 @@ async function removeNoteProperty(
 
 If users report formatting concerns, a future enhancement could use `vault.process()` with a regex-based approach for truly byte-precise edits. But start with `processFrontMatter()` — it's the platform-blessed path.
 
-**Batch executor:**
+**Batch executor (skip-and-continue):**
 
 ```typescript
 interface BatchResult {
@@ -370,7 +448,7 @@ async function batchUpdate(
 }
 ```
 
-> **Error handling strategy is [OQ-13](#oq-13).** The above shows a skip-and-collect approach. The batch always runs to completion and reports failures at the end.
+On completion, the UI shows: "Updated 198/200 notes. 2 failed: [clickable file list with error reasons]."
 
 ### 5.3 Note Manager
 
@@ -383,9 +461,10 @@ async function createTypedNote(
   title: string,
   ghost: boolean = false
 ): Promise<TFile> {
-  const folder = ghost && schema.folder
-    ? schema.folder
-    : ''; // root or user-configured — OQ-3
+  const ghostRoot = plugin.settings.ghostRoot; // user-configured
+  const folder = ghost
+    ? `${ghostRoot}/${schema.folder || schema.id}`
+    : ''; // vault default or user-configured
 
   // Ensure folder exists
   if (folder && !app.vault.getAbstractFileByPath(folder)) {
@@ -402,12 +481,63 @@ async function createTypedNote(
     }
   }
 
+  // Add title to frontmatter (for Front Matter Title plugin)
+  if (title && !frontmatter['title']) {
+    frontmatter['title'] = title;
+  }
+
   // Build YAML
   const yaml = stringifyYaml(frontmatter);
   const content = `---\n${yaml}---\n`;
 
-  const filePath = `${folder ? folder + '/' : ''}${sanitizeFileName(title)}.md`;
+  // Generate filename: YYYYMMDDHHmm or YYYYMMDDHHmm-slug
+  const timestamp = formatTimestamp(new Date()); // "202603081430"
+  const slug = plugin.settings.useSlugSuffix ? `-${slugify(title)}` : '';
+  const fileName = `${timestamp}${slug}`;
+  const filePath = `${folder ? folder + '/' : ''}${fileName}.md`;
+
   return await app.vault.create(filePath, content);
+}
+
+function formatTimestamp(date: Date): string {
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  return `${y}${mo}${d}${h}${mi}`;
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+```
+
+**Ghost promotion (optional move on body content):**
+
+```typescript
+// In metadataCache 'changed' handler or vault 'modify' handler:
+async function checkGhostPromotion(file: TFile): Promise<void> {
+  if (!plugin.settings.moveOnPromotion) return;
+
+  const content = await app.vault.cachedRead(file);
+  const bodyStart = content.indexOf('---', content.indexOf('---') + 3);
+  if (bodyStart === -1) return;
+
+  const body = content.substring(bodyStart + 3).trim();
+  if (body.length === 0) return; // still a ghost
+
+  // File has body content — check if it's in a ghost folder
+  const ghostRoot = plugin.settings.ghostRoot;
+  if (!file.path.startsWith(ghostRoot)) return; // not in ghost folder
+
+  // Move to promotion target folder
+  const targetFolder = plugin.settings.promotionTarget || '';
+  const newPath = `${targetFolder ? targetFolder + '/' : ''}${file.name}`;
+  await app.fileManager.renameFile(file, newPath);
 }
 ```
 
@@ -436,6 +566,10 @@ class NoteIndex {
       .filter((f): f is TFile => f instanceof TFile);
   }
 
+  getCount(typeId: string): number {
+    return this.index.get(typeId)?.size ?? 0;
+  }
+
   update(file: TFile, typeId: string | undefined): void {
     // Remove from all types first
     for (const [, paths] of this.index) {
@@ -462,15 +596,55 @@ All UI uses Obsidian's native primitives:
 
 | Surface | Component | Obsidian API |
 |---|---|---|
-| Schema editor | Main editing interface — see [OQ-4](#oq-4) | `Modal` or `ItemView` + `Setting` |
+| Schema editor | Modal for creating/editing types | `Modal` + `Setting` |
 | Type picker | Choose type when creating a note | `SuggestModal<TypeSchema>` |
 | Bulk update preview | Show diff before applying changes | `Modal` with list |
 | Property editor | Add/edit a single property in the schema | `Modal` + `Setting` + `DropdownComponent` |
 | Settings tab | Global plugin configuration | `PluginSettingTab` + `Setting` |
-| File explorer icons | Type-specific icons on notes | `setIcon()` / CSS decoration |
+| File explorer icons | Type-specific Lucide icons on notes | `setIcon()` / CSS decoration |
 | Context menu | Right-click actions on typed notes | `Menu` via file-menu event |
 
-**Type picker modal example:**
+**Command palette commands (MVP):**
+
+| Command | Flow |
+|---|---|
+| "Typed Notes: Add new note type" | Prompt for type ID → open schema editor modal |
+| "Typed Notes: Edit note type" | Type picker → open schema editor modal |
+| "Typed Notes: Create typed note" | Type picker → title prompt → create note |
+| "Typed Notes: Create ghost note" | Type picker → title prompt → create ghost file |
+| "Typed Notes: Apply schema changes" | Type picker → show diff → confirm → bulk update |
+| "Typed Notes: Set note type" | Type picker → assign type to current note |
+
+**Schema editor modal flow:**
+
+```
+┌──────────────────────────────────────────────┐
+│  Edit Type: Book                        [X]  │
+│                                              │
+│  ID:   book                                  │
+│  Name: Book                                  │
+│  Icon: 📖 [Change...]                        │
+│  Ghost folder: books                         │
+│                                              │
+│  Properties:                                 │
+│  ┌────────┬────────┬──────────┬───────────┐  │
+│  │ Key    │ Type   │ Default  │ Required  │  │
+│  ├────────┼────────┼──────────┼───────────┤  │
+│  │ title  │ text   │          │ ✓         │  │
+│  │ author │ text   │          │           │  │
+│  │ status │ select │ to-read  │           │  │
+│  │ rating │ number │          │           │  │
+│  │ tags   │ tags   │          │           │  │
+│  └────────┴────────┴──────────┴───────────┘  │
+│  [+ Add Property]                            │
+│                                              │
+│  [Save]  [Save & Apply to N notes]  [Cancel] │
+└──────────────────────────────────────────────┘
+```
+
+Built using `Setting` components for each property row, `DropdownComponent` for type selection, `ToggleComponent` for required checkbox.
+
+**Type picker modal:**
 
 ```typescript
 class TypePickerModal extends SuggestModal<TypeSchema> {
@@ -484,14 +658,16 @@ class TypePickerModal extends SuggestModal<TypeSchema> {
   }
 
   renderSuggestion(schema: TypeSchema, el: HTMLElement): void {
-    el.createEl('div', { text: schema.name });
-    el.createEl('small', {
-      text: `${schema.properties.length} properties`,
+    const container = el.createDiv({ cls: 'typed-notes-suggestion' });
+    if (schema.icon) {
+      setIcon(container.createSpan({ cls: 'typed-notes-suggestion-icon' }), schema.icon);
+    }
+    const text = container.createDiv();
+    text.createEl('div', { text: schema.name });
+    text.createEl('small', {
+      text: `${schema.properties.length} properties · ${this.plugin.noteIndex.getCount(schema.id)} notes`,
       cls: 'typed-notes-suggestion-hint'
     });
-    if (schema.icon) {
-      setIcon(el.createSpan({ cls: 'typed-notes-suggestion-icon' }), schema.icon);
-    }
   }
 
   onChooseSuggestion(schema: TypeSchema): void {
@@ -500,9 +676,9 @@ class TypePickerModal extends SuggestModal<TypeSchema> {
 }
 ```
 
-### 5.5 Bases Integration
+### 5.5 Bases Integration (Phase 3)
 
-**Registering a custom Bases view (Phase 3):**
+**Registering a custom Bases view:**
 
 ```typescript
 import { BasesView, QueryController } from 'obsidian';
@@ -548,9 +724,13 @@ class TypedBasesView extends BasesView {
 }
 ```
 
-**Embedded filtered views** rely on Bases' native embed syntax (`![[mybase]]`). For dynamic filtering (e.g., "show interview steps for *this* vacancy"), the plugin would need to generate per-note `.base` files or leverage Bases' filter expressions if they support `this.file.name` context. This is a research item — the current Bases filter syntax supports `file.inFolder()`, `file.hasTag()`, and property comparisons, but self-referential filters may not be available yet.
+**Embedded filtered views** rely on Bases' native embed syntax (`![[mybase]]`). For dynamic filtering (e.g., "show interview steps for *this* vacancy"), the plugin would need to generate per-note `.base` files or leverage Bases' filter expressions if they support `this.file.name` context. This is a research item for Phase 3.
 
-### 5.6 File Explorer Decorations
+**Relation property traversal** (`interview-step.vacancy.name`) is the long-term goal. This likely depends on either:
+- A custom Bases view that resolves relation chains and renders the target property
+- The Bases custom functions API (on Obsidian's roadmap but not yet available)
+
+### 5.6 File Explorer Decorations (Phase 2)
 
 Obsidian doesn't expose a public API for file explorer item decorations. Common community approaches:
 
@@ -558,7 +738,7 @@ Obsidian doesn't expose a public API for file explorer item decorations. Common 
 2. **Post-processing:** Listen to layout changes, query DOM for file items, inject icon elements. Also fragile.
 3. **File icon override:** Obsidian 1.4+ supports `app.vault.getConfig('fileExplorerIcons')` — but this is undocumented.
 
-The recommended approach for MVP is to **focus on the status bar and note header** for type indicators, and defer file explorer decoration to Phase 2 with a simple CSS-based approach that degrades gracefully.
+Approach for Phase 2: a simple CSS-based method that degrades gracefully. For MVP, focus on the status bar and note header for type indicators.
 
 ---
 
@@ -572,7 +752,7 @@ These are explicit constraints derived from the failures of DB Folder and DataLo
 
 ### 6.2 Never use custom file formats for user data
 
-**DataLoom's fatal mistake.** All user data must live in standard `.md` files with YAML frontmatter. No `.json`, `.loom`, `.db`, or any other format for content that users expect to be searchable, linkable, or visible in graph view. Schema definitions (plugin internals) may use any format, but **user content is always `.md`**.
+**DataLoom's fatal mistake.** All user data must live in standard `.md` files with YAML frontmatter. No `.json`, `.loom`, `.db`, or any other format for content that users expect to be searchable, linkable, or visible in graph view. Schema definitions (plugin internals) use `.yaml` in `.obsidian/`, but **user content is always `.md`**.
 
 ### 6.3 Never depend on Dataview or other community plugins
 
@@ -580,7 +760,7 @@ These are explicit constraints derived from the failures of DB Folder and DataLo
 
 ### 6.4 Never use custom UI components when native ones exist
 
-**DB Folder's theme-breaking mistake.** Every UI surface must use Obsidian's `Modal`, `Setting`, `Menu`, `Notice`, `SuggestModal`, `FuzzySuggestModal`, `PluginSettingTab`, `ItemView`, and related primitives. No custom dropdown implementations, no custom table renderers for the schema editor, no custom context menus. This ensures:
+**DB Folder's theme-breaking mistake.** Every UI surface must use Obsidian's `Modal`, `Setting`, `Menu`, `Notice`, `SuggestModal`, `FuzzySuggestModal`, `PluginSettingTab`, and related primitives. No custom dropdown implementations, no custom table renderers for the schema editor, no custom context menus. This ensures:
 - Automatic theme compatibility
 - Mobile support
 - Consistent keyboard navigation
@@ -606,173 +786,26 @@ Ghost files and typed notes are created only through explicit user actions (comm
 
 ---
 
-## 7. Open Questions
+## 7. Resolved Decisions
 
-Each question must be resolved before implementing the relevant feature. Questions are referenced throughout the document as `[OQ-N]`.
+Summary of all design decisions made during planning.
 
-<a id="oq-1"></a>
-### OQ-1: Plugin Name
-**Status:** Unresolved
-**Affects:** Package name, plugin ID, CSS class prefix, display throughout UI
-**Question:** What should the plugin be called? Working title is "Typed Notes" — alternatives might include "Note Types", "Schemas", "NoteForge", etc. The name should be clear in the Obsidian community plugin listing.
-
-<a id="oq-2"></a>
-### OQ-2: Schema Storage Location and Format
-**Status:** Unresolved
-**Affects:** Phase 1 (schema engine), portability, version control
-**Question:** Where and how should type schemas be stored?
-
-| Option | Pros | Cons |
-|---|---|---|
-| `.yaml` files in `.obsidian/typed-notes/` | Clean separation; version-controllable if user tracks `.obsidian`; invisible in vault | Not visible in Obsidian UI; harder to share schemas between vaults |
-| `.md` files in vault (e.g., `_types/book.md`) | Visible in vault; can be `[[linked]]`; version-controllable | Pollutes vault namespace; user might accidentally edit |
-| Plugin data (`this.saveData()`) | Simplest implementation; single file | Not human-readable; harder to version control; lost if plugin data resets |
-| Inside `.base` files as extended config | Tight Bases coupling; schema lives next to view | Couples schema to a specific view; confusing if multiple bases reference same type |
-
-**Recommendation:** `.yaml` in `.obsidian/typed-notes/` for clean separation, with an export/import feature for sharing.
-
-<a id="oq-3"></a>
-### OQ-3: Ghost File Folder Structure
-**Status:** Unresolved
-**Affects:** Phase 1 (note creation), vault organization
-**Question:** How should ghost files be organized?
-
-- Single `_data/` root with subfolders per type (e.g., `_data/books/`, `_data/recipes/`)?
-- User-configurable folder per type in the schema definition?
-- Both (global default + per-type override)?
-- What naming convention for ghost files? Title-based? Date-prefixed? UUID?
-
-<a id="oq-4"></a>
-### OQ-4: Visual Schema Editor Design
-**Status:** Unresolved
-**Affects:** Phase 1 (core UX)
-**Question:** What form should the schema editor take?
-
-| Option | Pros | Cons |
-|---|---|---|
-| Dedicated settings tab | Familiar location; easy to find | Cramped; not ideal for complex editing |
-| Modal | Focused editing; consistent with Obsidian patterns | Can't see vault context while editing |
-| Sidebar panel | Always accessible; can edit while viewing notes | Takes permanent space; complex layout |
-| Custom view type (`ItemView`) | Full workspace leaf; can be tabbed/split; most space | Heavier implementation; might feel overbuilt for MVP |
-
-<a id="oq-5"></a>
-### OQ-5: Select/Multiselect Option Management
-**Status:** Unresolved
-**Affects:** Phase 1 (property types)
-**Question:** How should predefined options for `select`/`multiselect` properties be managed?
-
-- How are options added/removed/reordered?
-- Do options have colors? If so, which palette? Obsidian's native tag colors? Custom?
-- When an option is removed from the schema, what happens to notes that have that value? Warn? Auto-clear? Leave as-is?
-- Should options be auto-discovered from existing values in the vault?
-
-<a id="oq-6"></a>
-### OQ-6: Formulas
-**Status:** Unresolved
-**Affects:** Phase 3
-**Question:** How deep should formula support go?
-
-- Bases already supports formulas in `.base` files (e.g., `'if(price, price.toFixed(2) + " dollars")'`). Should the plugin simply expose this via its schema editor?
-- Should formulas be computable *outside* of Bases views (e.g., auto-populate a frontmatter field based on a formula)?
-- Custom formula functions are on Obsidian's roadmap but not yet available — should we wait for that API?
-
-<a id="oq-7"></a>
-### OQ-7: Type-Specific Icons
-**Status:** Unresolved
-**Affects:** Phase 2
-**Question:** How should users assign icons to types?
-
-- Pick from Obsidian's built-in Lucide icon set? (simplest, consistent)
-- Allow emoji? (cross-platform, but inconsistent rendering)
-- Custom SVG upload via `addIcon()`? (flexible, but complex UX)
-- Combination of the above?
-
-<a id="oq-8"></a>
-### OQ-8: Relations Between Types
-**Status:** Unresolved
-**Affects:** Phase 3
-**Question:** How explicitly should the plugin model inter-type relations?
-
-- **Minimal:** A `relation` property is just a text field expected to contain `[[wiki-links]]`. The plugin validates that the linked note exists and has the expected type. No special UI.
-- **Structured:** The schema declares `relationType: "interview-step"`, and the plugin provides a specialized picker that only shows notes of that type. Backlink awareness, count summaries, embedded views.
-- **Full relational:** Foreign keys, referential integrity checks, cascade behaviors (delete a vacancy → warn about orphaned interview steps).
-
-<a id="oq-9"></a>
-### OQ-9: Base Integration Depth
-**Status:** Unresolved
-**Affects:** Phase 2–3
-**Question:** How tightly should the plugin integrate with Bases?
-
-- **Light:** Plugin manages schemas only. User manually creates `.base` files. Plugin provides "Copy filter for this type" helper.
-- **Medium:** Plugin auto-generates a default `.base` file when a type is created. User can customize it. Plugin updates filters if type ID changes.
-- **Deep:** Plugin registers custom Bases view types with type-aware rendering, validation badges, relation navigation. Plugin manages `.base` files as owned artifacts.
-
-<a id="oq-10"></a>
-### OQ-10: Type Assignment Triggers
-**Status:** Unresolved
-**Affects:** Phase 1 (type detection)
-**Question:** How does a note become "typed"?
-
-- **Plugin-created only:** Notes created through the plugin's "New typed note" command get the `type` field. Existing notes are ignored unless the user explicitly assigns a type.
-- **Auto-detect:** The plugin scans all notes. Any note with `type: <known-id>` in frontmatter is treated as typed, regardless of how it got there. User can manually type `type: book` in any note.
-- **Hybrid:** Auto-detect, but with a first-time confirmation ("This note has `type: book` but was not created by Typed Notes. Manage it?")
-
-**Recommendation:** Auto-detect silently. The `type` field is the contract — it doesn't matter how it got there.
-
-<a id="oq-11"></a>
-### OQ-11: Column Type System
-**Status:** Unresolved
-**Affects:** Phase 1 (property definitions)
-**Question:** What is the exact list of supported property types?
-
-Obsidian natively supports these frontmatter property types:
-- `text` (string)
-- `list` (YAML array of strings)
-- `number`
-- `checkbox` (boolean)
-- `date` (YYYY-MM-DD)
-- `datetime` (YYYY-MM-DDTHH:mm)
-- `tags` (special — Obsidian indexes these)
-- `aliases` (special — Obsidian uses for note aliases)
-
-Should the plugin add:
-- `select` / `multiselect` (stored as text/list in YAML but with constrained options in the UI)?
-- `url` (stored as text but rendered as clickable link)?
-- `relation` (stored as `[[wiki-link]]` text)?
-- `rating` (stored as number but rendered as stars)?
-- Others?
-
-<a id="oq-12"></a>
-### OQ-12: Minimum Obsidian Version
-**Status:** Unresolved
-**Affects:** All phases
-**Question:** Should the plugin require Obsidian 1.10+ (Bases API available) or work without Bases?
-
-- **1.10+:** Can use `registerBasesView()`, tight integration, but excludes users on older versions.
-- **Graceful degradation:** Core schema/frontmatter features work on any version. Bases features are enabled only if Bases is available. More code to maintain.
-
-<a id="oq-13"></a>
-### OQ-13: Error Handling for Bulk Updates
-**Status:** Unresolved
-**Affects:** Phase 1 (schema evolution)
-**Question:** When a bulk update fails partway through:
-
-- **Skip and continue:** Process all files, collect errors, report at the end. Some notes updated, some not.
-- **Stop on first error:** Halt immediately. Some notes updated, some not. User must manually resolve.
-- **Transaction-like:** Dry-run first (validate all files can be updated), then execute. If any would fail, abort all.
-
-The "transaction-like" approach is most complex but safest. The "skip and continue" approach is simplest and acceptable given that "the user has git" (per design decisions).
-
-<a id="oq-14"></a>
-### OQ-14: Template Integration
-**Status:** Unresolved
-**Affects:** Phase 3
-**Question:** How should typed notes interact with Obsidian's template system?
-
-- Should each type have an associated template that defines the note body (below frontmatter)?
-- Should the plugin generate Templates-compatible template files from schemas?
-- Should it integrate with Templater's `tp.` syntax?
-- Or should body templates be out of scope entirely (the plugin only manages frontmatter)?
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Plugin name | **Typed Notes** |
+| 2 | Schema storage | `.yaml` files in `.obsidian/note-types/` |
+| 3 | Ghost file folders | User-defined ghost root (default: Obsidian's new note location), subfolders per type. Filenames: `YYYYMMDDHHmm.md` with optional slug suffix. Optional move on promotion. |
+| 4 | Schema editor UI | Modal, accessed via command palette ("Add new note type" / "Edit existing note type") |
+| 5 | Select/multiselect options | Color (Obsidian-style, randomly assigned) + manual sort order. Removal: clear value if not required, block if required and in use. No auto-discovery. |
+| 6 | Formulas | Deferred — use Bases' native formula system |
+| 7 | Type icons | Lucide icon picker |
+| 8 | Relations | Structured: schema declares target type, stored as `[[wiki-link]]`, type-constrained picker. Goal: dot-notation traversal (`vacancy.name`). Phase 3. |
+| 9 | Bases integration | Light for MVP (user creates `.base` files manually). Deep integration in Phase 3. |
+| 10 | Type assignment | Auto-detect: any note with `type: <known-id>` is managed, regardless of origin. |
+| 11 | Column types | `text`, `number`, `checkbox`, `date`, `datetime`, `select`, `multiselect`, `tags`, `url`, `aliases`, `relation`, `list` |
+| 12 | Min Obsidian version | Latest only (1.10+), no backwards compatibility |
+| 13 | Bulk update errors | Skip and continue — process all files, collect errors, report at the end |
+| 14 | Template integration | Out of scope — plugin manages frontmatter only |
 
 ---
 
@@ -780,68 +813,74 @@ The "transaction-like" approach is most complex but safest. The "skip and contin
 
 ### Phase 1: MVP — Schema Engine + Frontmatter Management
 **Goal:** Users can define types, create typed notes, and perform bulk schema changes.
+**Target:** Obsidian 1.10+
 
 ```
-Week 1-2: Project scaffolding
+Week 1-2: Project scaffolding + Schema Engine
 ├── Initialize Obsidian plugin (esbuild, manifest.json, main.ts)
 ├── TypeScript strict mode, ESLint
-├── Schema Engine: load/save/validate schemas
-├── Data model types (TypeSchema, PropertyDefinition)
-└── Schema storage implementation (pending OQ-2)
+├── Data model types (TypeSchema, PropertyDefinition, etc.)
+├── Schema Engine: load/save/validate .yaml schemas from .obsidian/note-types/
+├── Schema diffing: compute added/removed/renamed fields
+└── Plugin settings: ghost root, slug toggle, promotion behavior
 
-Week 3-4: Frontmatter operations
+Week 3-4: Frontmatter operations + Note management
 ├── Frontmatter Manager: single-file CRUD via processFrontMatter()
-├── Batch executor with progress callback
-├── Note Manager: create typed notes, create ghost files
-├── Note index: build from MetadataCache, maintain on changes
-└── Schema diffing: compute added/removed/renamed fields
+├── Batch executor: skip-and-continue with progress callback
+├── Note Manager: create typed notes with timestamp filenames
+├── Ghost file creation in <ghost-root>/<type>/ folders
+├── Ghost promotion detection + optional move
+└── Note index: build from MetadataCache, maintain on changes
 
 Week 5-6: UI
-├── Schema editor (pending OQ-4): create/edit types and properties
-├── Type picker modal: SuggestModal for choosing a type
+├── Schema editor modal: create/edit types and properties
+├── Type picker modal: SuggestModal with note counts
 ├── Bulk update preview modal: show diff, confirm/cancel
-├── Settings tab: type list, global configuration
-├── Commands: "Create typed note", "Edit type schema", "Apply schema changes"
-└── Context menu: "Set type" on right-click of any note
+├── Settings tab: ghost root, slug suffix, promotion settings
+├── Commands: all 6 command palette entries
+└── Context menu: "Set type" on right-click
 
 Week 7: Testing & polish
 ├── Manual testing across desktop + mobile
-├── Edge cases: empty vaults, notes with no frontmatter, malformed YAML
+├── Edge cases: empty vaults, no frontmatter, malformed YAML, unknown types
 ├── Performance: vaults with 10k+ notes
 └── Documentation: README, settings descriptions
 ```
 
-**Milestone:** User can define a "Book" type with 5 properties, create 50 ghost book notes, add a new "genre" field, and have it backfilled across all 50 notes in one action.
+**Milestone:** User can define a "Book" type with 5 properties, create 50 ghost book notes (as `YYYYMMDDHHmm.md` files in `_data/books/`), add a new "genre" field, and have it backfilled across all 50 notes in one action.
 
-### Phase 2: Bases Integration & Visual Polish
-**Goal:** Typed notes are visually distinguished and have default database views.
+### Phase 2: Visual Polish & Bases Helpers
+**Goal:** Typed notes are visually distinguished and Bases usage is streamlined.
 
 ```
-├── Auto-generate .base files for types (pending OQ-9)
-├── Type-specific icons in file explorer (pending OQ-7)
+├── Lucide icon picker in schema editor
+├── Type-specific icons in file explorer (CSS decoration)
 ├── Ghost file visual indicators (dimmed appearance)
 ├── Enhanced type picker with icons and property preview
 ├── Validation: surface missing/invalid properties as warnings
-├── "Open in Base" command: jump from a typed note to its Base view
-└── Select/multiselect UI for constrained-option properties (pending OQ-5)
+├── Select/multiselect: color options, manual ordering, Obsidian-style palette
+├── "Copy filter for this type" command
+└── "Copy Bases config for this type" command
 ```
 
-**Milestone:** Each type has an auto-generated Base view. Ghost notes are visually distinct. Type icons appear in the file explorer.
+**Milestone:** Types have icons. Ghost notes are visually distinct. Select properties have colored options. User can quickly set up a Base view from the plugin's helper commands.
 
-### Phase 3: Relations & Advanced Features
-**Goal:** Types can reference each other. Advanced Bases integration.
+### Phase 3: Relations & Advanced Bases
+**Goal:** Types can reference each other. Deep Bases integration.
 
 ```
-├── Relation property type with type-constrained note picker
-├── Embedded filtered views for related records
+├── Relation property type: schema declares target type
+├── Type-constrained note picker for relation fields
+├── Wiki-link storage for relations ("[[note-name]]")
 ├── Custom Bases view type via registerBasesView()
+├── Dot-notation property traversal in custom view (vacancy.name)
+├── Auto-generate .base files per type
+├── Embedded filtered views for related records
 ├── Type coercion UI (change property type with conversion)
-├── Formula support (pending OQ-6)
-├── Template integration (pending OQ-14)
 └── Import/export schemas (share between vaults)
 ```
 
-**Milestone:** User has a "Job Vacancy" type and an "Interview Step" type. Each vacancy note embeds a filtered view of its interview steps. Adding a new field to Interview Step updates all records.
+**Milestone:** User has a "Job Vacancy" type and an "Interview Step" type. Each interview step has a `vacancy` relation field. The custom Bases view shows `vacancy.name` as a resolved column. Adding a new field to Interview Step updates all records.
 
 ---
 
@@ -852,13 +891,14 @@ Week 7: Testing & polish
 | `app.fileManager.processFrontMatter(file, fn)` | Surgical frontmatter edits | [Plugin Guidelines](https://docs.obsidian.md/plugins/Plugins/Releasing/Plugin+guidelines) |
 | `app.vault.create(path, content)` | Create new notes | [Vault API](https://docs.obsidian.md/plugins/Plugins/Vault) |
 | `app.vault.process(file, fn)` | Low-level file content transform | [Vault API](https://docs.obsidian.md/plugins/Plugins/Vault) |
+| `app.vault.adapter.read/write/exists/mkdir` | Direct filesystem access (for `.obsidian/` files) | Adapter API |
 | `app.metadataCache.getFileCache(file)` | Read cached frontmatter, links, tags | [MetadataCache](https://docs.obsidian.md/plugins/Plugins/Vault) |
 | `app.metadataCache.on('changed', fn)` | React to metadata changes | Events API |
 | `app.metadataCache.on('resolved', fn)` | All metadata indexed | Events API |
-| `this.registerBasesView(type, config)` | Register custom Bases view | [Bases View Guide](https://docs.obsidian.md/plugins/guides/bases-view) |
+| `app.fileManager.renameFile(file, newPath)` | Move/rename files (ghost promotion) | FileManager API |
+| `this.registerBasesView(type, config)` | Register custom Bases view (Phase 3) | [Bases View Guide](https://docs.obsidian.md/plugins/guides/bases-view) |
 | `BasesView.onDataUpdated()` | Render custom view content | [Bases View Guide](https://docs.obsidian.md/plugins/guides/bases-view) |
 | `setIcon(el, iconName)` | Add Lucide icon to element | [Icons](https://docs.obsidian.md/plugins/Plugins/User+interface/Icons) |
-| `addIcon(name, svg)` | Register custom SVG icon | [Icons](https://docs.obsidian.md/plugins/Plugins/User+interface/Icons) |
 | `SuggestModal<T>` | Searchable suggestion list | UI API |
 | `Modal`, `Setting` | Dialog and form building | UI API |
 | `PluginSettingTab` | Plugin settings page | UI API |
@@ -866,6 +906,7 @@ Week 7: Testing & polish
 | `this.addCommand()` | Register command palette commands | Plugin API |
 | `this.registerEvent()` | Subscribe to events (auto-cleanup) | Plugin API |
 | `app.workspace.onLayoutReady(fn)` | Run after vault is indexed | Workspace API |
+| `parseYaml() / stringifyYaml()` | YAML serialization (Obsidian built-in) | Utility API |
 
 ## Appendix B: File Structure (Proposed)
 
@@ -876,22 +917,23 @@ obsidian-typed-notes/
 │   ├── types.ts                 # TypeSchema, PropertyDefinition, etc.
 │   ├── schema/
 │   │   ├── SchemaEngine.ts      # Load, save, validate, diff schemas
-│   │   └── SchemaStorage.ts     # Persistence layer (swappable per OQ-2)
+│   │   └── SchemaStorage.ts     # Read/write .yaml in .obsidian/note-types/
 │   ├── frontmatter/
-│   │   ├── FrontmatterManager.ts # Single-file operations
-│   │   └── BatchExecutor.ts      # Bulk updates with progress
+│   │   ├── FrontmatterManager.ts # Single-file operations via processFrontMatter()
+│   │   └── BatchExecutor.ts      # Bulk updates, skip-and-continue
 │   ├── notes/
-│   │   ├── NoteManager.ts       # Create, ghost files, promote
-│   │   └── NoteIndex.ts         # Type → files index
+│   │   ├── NoteManager.ts       # Create typed notes, ghost files, promotion
+│   │   ├── NoteIndex.ts         # Type → files index, MetadataCache sync
+│   │   └── naming.ts            # Timestamp + slug filename generation
 │   ├── ui/
-│   │   ├── SchemaEditorModal.ts # Visual schema editor
+│   │   ├── SchemaEditorModal.ts # Visual schema editor (Modal + Settings)
 │   │   ├── TypePickerModal.ts   # SuggestModal for type selection
 │   │   ├── BulkUpdateModal.ts   # Preview + confirm bulk changes
 │   │   ├── PropertyEditorModal.ts # Add/edit single property
 │   │   ├── SettingsTab.ts       # Plugin settings
-│   │   └── FileExplorerIcons.ts # Type icon decorations
+│   │   └── FileExplorerIcons.ts # Type icon decorations (Phase 2)
 │   └── bases/
-│       ├── BaseGenerator.ts     # Generate .base files from schemas
+│       ├── BaseHelpers.ts       # "Copy filter" command, config snippets
 │       └── TypedBasesView.ts    # Custom Bases view (Phase 3)
 ├── styles.css                   # Minimal CSS (icon positioning, ghost dimming)
 ├── manifest.json
