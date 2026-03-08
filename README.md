@@ -86,14 +86,15 @@ properties:
 2. Enable the plugin in Settings → Community Plugins
 3. Create your first type with `Cmd/Ctrl+P` → "Typed Notes: Add new note type"
 
-## Development
+## Screenshots
 
-```bash
-pnpm install
-pnpm dev       # watch mode
-pnpm build     # production build
-```
+<img width="721" height="424" alt="image" src="https://github.com/user-attachments/assets/e5c5b324-30a6-453f-afd7-e02013865665" />
 
-## License
+<img width="592" height="691" alt="image" src="https://github.com/user-attachments/assets/3b8234b1-c0e2-40b3-aefa-6fb36f846432" />
 
-MIT
+<img width="588" height="689" alt="image" src="https://github.com/user-attachments/assets/01a8b636-8185-4e86-8a41-365585653829" />
+
+<img width="584" height="533" alt="image" src="https://github.com/user-attachments/assets/c0680a08-d4b6-4b98-9093-a8ce8dcfd18a" />
+
+<img width="891" height="132" alt="image" src="https://github.com/user-attachments/assets/12fff98d-809c-4128-98b8-31ced66e3618" />
+
