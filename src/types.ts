@@ -93,6 +93,8 @@ export interface TypedNotesSettings {
 	moveOnPromotion: boolean;
 	/** Target folder when promoting ghost files */
 	promotionTarget: string;
+	/** Default folder for generated .base files */
+	basesFolder: string;
 }
 
 export const DEFAULT_SETTINGS: TypedNotesSettings = {
@@ -100,4 +102,5 @@ export const DEFAULT_SETTINGS: TypedNotesSettings = {
 	useSlugSuffix: true,
 	moveOnPromotion: false,
 	promotionTarget: '',
+	basesFolder: '',
 };

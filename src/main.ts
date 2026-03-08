@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, TAbstractFile } from 'obsidian';
+import { Notice, Plugin, TFile, TAbstractFile, normalizePath, stringifyYaml } from 'obsidian';
 import { TypedNotesSettings, DEFAULT_SETTINGS, TypeSchema, SchemaDiff } from './types';
 import { SchemaEngine } from './schema/SchemaEngine';
 import { FrontmatterManager } from './frontmatter/FrontmatterManager';
@@ -99,6 +99,12 @@ export default class TypedNotesPlugin extends Plugin {
 				if (checking) return !!file;
 				if (file) this.setNoteType(file);
 			},
+		});
+
+		this.addCommand({
+			id: 'generate-base',
+			name: 'Generate base from type',
+			callback: () => this.generateBase(),
 		});
 
 		this.addCommand({
@@ -375,6 +381,78 @@ export default class TypedNotesPlugin extends Plugin {
 			await this.frontmatterManager.setProperties(file, values);
 			new Notice('Properties updated');
 		}).open();
+	}
+
+	private generateBase(): void {
+		if (this.schemaEngine.schemas.length === 0) {
+			new Notice('No types defined yet');
+			return;
+		}
+		new TypePickerModal(
+			this.app,
+			this.schemaEngine.schemas,
+			this.noteIndex,
+			async (schema) => {
+				await this.createBaseFile(schema);
+			}
+		).open();
+	}
+
+	private async createBaseFile(schema: TypeSchema): Promise<void> {
+		const folder = this.settings.basesFolder;
+		if (folder) {
+			const existing = this.app.vault.getAbstractFileByPath(folder);
+			if (!existing) {
+				await this.app.vault.createFolder(folder);
+			}
+		}
+
+		const fileName = `${schema.id}.base`;
+		const filePath = folder
+			? normalizePath(`${folder}/${fileName}`)
+			: fileName;
+
+		// Check if file already exists
+		if (this.app.vault.getAbstractFileByPath(filePath)) {
+			new Notice(`Base file already exists: ${filePath}`);
+			return;
+		}
+
+		// Build the .base YAML content
+		const baseConfig: Record<string, unknown> = {};
+
+		// Filter to this type
+		baseConfig.filters = {
+			and: [`type = "${schema.id}"`],
+		};
+
+		// Properties with display names
+		const properties: Record<string, { displayName: string }> = {};
+		for (const prop of schema.properties) {
+			const displayName = prop.displayName || prop.key;
+			properties[prop.key] = { displayName };
+		}
+		baseConfig.properties = properties;
+
+		// Default table view with all properties in order
+		const order = ['file.name', ...schema.properties.map((p) => p.key)];
+		baseConfig.views = [
+			{
+				type: 'table',
+				name: schema.name,
+				order,
+			},
+		];
+
+		const content = stringifyYaml(baseConfig);
+		await this.app.vault.create(filePath, content);
+		new Notice(`Base created: ${filePath}`);
+
+		// Open the base file
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		if (file instanceof TFile) {
+			await this.app.workspace.getLeaf(false).openFile(file);
+		}
 	}
 
 	private async reloadTypes(): Promise<void> {

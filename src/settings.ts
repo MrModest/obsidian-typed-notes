@@ -76,6 +76,23 @@ export class TypedNotesSettingTab extends PluginSettingTab {
 				});
 		}
 
+		// --- Bases ---
+		containerEl.createEl('h3', { text: 'Bases' });
+
+		new Setting(containerEl)
+			.setName('Bases folder')
+			.setDesc('Default folder for generated .base files')
+			.addText((text) => {
+				text
+					.setPlaceholder('leave empty for vault root')
+					.setValue(this.plugin.settings.basesFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.basesFolder = value;
+						await this.plugin.saveSettings();
+					});
+				new FolderSuggest(this.app, text.inputEl);
+			});
+
 		// --- Registered Types ---
 		containerEl.createEl('h3', { text: 'Registered Types' });
 
