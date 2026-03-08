@@ -1,0 +1,91 @@
+/* Typed Notes Plugin Styles */
+
+/* Schema editor modal */
+.typed-notes-schema-editor .typed-notes-property-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-1) 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.typed-notes-schema-editor .typed-notes-property-row:last-child {
+	border-bottom: none;
+}
+
+.typed-notes-schema-editor .typed-notes-property-actions {
+	display: flex;
+	gap: var(--size-4-1);
+	margin-left: auto;
+}
+
+/* Type picker suggestion */
+.typed-notes-suggestion {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.typed-notes-suggestion-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+}
+
+.typed-notes-suggestion-hint {
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+}
+
+/* Bulk update modal */
+.typed-notes-bulk-preview {
+	max-height: 300px;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2);
+	margin: var(--size-4-2) 0;
+}
+
+.typed-notes-diff-added {
+	color: var(--text-success);
+}
+
+.typed-notes-diff-removed {
+	color: var(--text-error);
+}
+
+.typed-notes-diff-renamed {
+	color: var(--text-accent);
+}
+
+/* Property editor */
+.typed-notes-options-list {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2);
+	margin-top: var(--size-4-1);
+}
+
+.typed-notes-option-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-1) 0;
+}
+
+/* Batch progress */
+.typed-notes-progress-bar {
+	width: 100%;
+	height: 4px;
+	background: var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	overflow: hidden;
+	margin: var(--size-4-2) 0;
+}
+
+.typed-notes-progress-fill {
+	height: 100%;
+	background: var(--interactive-accent);
+	transition: width 0.2s ease;
+}

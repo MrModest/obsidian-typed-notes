@@ -1,0 +1,9 @@
+{
+	"id": "typed-notes",
+	"name": "Typed Notes",
+	"version": "0.1.0",
+	"minAppVersion": "1.10.0",
+	"description": "A type system for Obsidian notes — define schemas, enforce properties, and bulk-update notes by type.",
+	"author": "Typed Notes",
+	"isDesktopOnly": false
+}
