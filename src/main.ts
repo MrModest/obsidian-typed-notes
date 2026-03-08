@@ -9,6 +9,8 @@ import { TypedNotesSettingTab } from './settings';
 import { SchemaEditorModal } from './ui/SchemaEditorModal';
 import { TypePickerModal } from './ui/TypePickerModal';
 import { BulkUpdateModal } from './ui/BulkUpdateModal';
+import { CreateNoteModal } from './ui/CreateNoteModal';
+import { ConfirmModal } from './ui/ConfirmModal';
 
 export default class TypedNotesPlugin extends Plugin {
 	settings: TypedNotesSettings = DEFAULT_SETTINGS;
@@ -62,14 +64,8 @@ export default class TypedNotesPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'create-typed-note',
-			name: 'Create typed note',
-			callback: () => this.createTypedNote(false),
-		});
-
-		this.addCommand({
-			id: 'create-ghost-note',
-			name: 'Create ghost note',
-			callback: () => this.createTypedNote(true),
+			name: 'Create note',
+			callback: () => this.createTypedNote(),
 		});
 
 		this.addCommand({
@@ -128,7 +124,6 @@ export default class TypedNotesPlugin extends Plugin {
 			})
 		);
 
-		// Ghost promotion check on file modify
 		this.registerEvent(
 			this.app.vault.on('modify', (file: TAbstractFile) => {
 				if (file instanceof TFile && file.extension === 'md') {
@@ -137,7 +132,6 @@ export default class TypedNotesPlugin extends Plugin {
 			})
 		);
 
-		// Context menu: Set type
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (file instanceof TFile && file.extension === 'md') {
@@ -191,7 +185,7 @@ export default class TypedNotesPlugin extends Plugin {
 		).open();
 	}
 
-	private createTypedNote(ghost: boolean): void {
+	private createTypedNote(): void {
 		if (this.schemaEngine.schemas.length === 0) {
 			new Notice('No types defined yet. Create a type first.');
 			return;
@@ -200,18 +194,18 @@ export default class TypedNotesPlugin extends Plugin {
 			this.app,
 			this.schemaEngine.schemas,
 			this.noteIndex,
-			async (schema) => {
-				const displayProp = schema.displayProperty || 'title';
-				const title = await this.promptForText(
-					`Enter ${displayProp} for new ${schema.name}`
-				);
-				if (!title) return;
-
-				const file = await this.noteManager.createTypedNote(schema, title, ghost);
-				new Notice(`${ghost ? 'Ghost note' : 'Note'} created: ${file.path}`);
-				if (!ghost) {
-					await this.app.workspace.getLeaf(false).openFile(file);
-				}
+			(schema) => {
+				new CreateNoteModal(
+					this.app,
+					schema,
+					async (values) => {
+						const displayProp = schema.displayProperty || 'title';
+						const title = String(values[displayProp] || '');
+						const file = await this.noteManager.createTypedNote(schema, title, true, values);
+						new Notice(`Note created: ${file.path}`);
+						await this.app.workspace.getLeaf(false).openFile(file);
+					}
+				).open();
 			}
 		).open();
 	}
@@ -272,7 +266,6 @@ export default class TypedNotesPlugin extends Plugin {
 		const result = await this.batchExecutor.execute(
 			files,
 			(frontmatter) => {
-				// Add new fields with defaults
 				for (const prop of diff.added) {
 					if (!(prop.key in frontmatter)) {
 						frontmatter[prop.key] = prop.default !== undefined
@@ -281,12 +274,10 @@ export default class TypedNotesPlugin extends Plugin {
 					}
 				}
 
-				// Remove fields
 				for (const key of diff.removed) {
 					delete frontmatter[key];
 				}
 
-				// Rename fields
 				for (const r of diff.renamed) {
 					if (r.from in frontmatter) {
 						frontmatter[r.to] = frontmatter[r.from];
@@ -315,16 +306,16 @@ export default class TypedNotesPlugin extends Plugin {
 			this.app,
 			this.schemaEngine.schemas,
 			this.noteIndex,
-			async (schema) => {
+			(schema) => {
 				const noteCount = this.noteIndex.getCount(schema.id);
-				const confirmMsg = noteCount > 0
+				const message = noteCount > 0
 					? `Delete type "${schema.name}"? ${noteCount} notes will keep their type field.`
 					: `Delete type "${schema.name}"?`;
 
-				if (confirm(confirmMsg)) {
+				new ConfirmModal(this.app, message, async () => {
 					await this.schemaEngine.deleteSchema(schema.id);
 					new Notice(`Type "${schema.name}" deleted`);
-				}
+				}).open();
 			}
 		).open();
 	}
@@ -349,12 +340,5 @@ export default class TypedNotesPlugin extends Plugin {
 		await this.schemaEngine.loadSchemas();
 		this.noteIndex.buildInitialIndex();
 		new Notice(`Loaded ${this.schemaEngine.schemas.length} types`);
-	}
-
-	private promptForText(message: string): Promise<string | null> {
-		return new Promise((resolve) => {
-			const input = window.prompt(message);
-			resolve(input);
-		});
 	}
 }

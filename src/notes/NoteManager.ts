@@ -14,7 +14,12 @@ export class NoteManager {
 		this.noteIndex = noteIndex;
 	}
 
-	async createTypedNote(schema: TypeSchema, title: string, ghost: boolean): Promise<TFile> {
+	async createTypedNote(
+		schema: TypeSchema,
+		title: string,
+		ghost: boolean,
+		values?: Record<string, unknown>
+	): Promise<TFile> {
 		const timestamp = formatTimestamp(new Date());
 		const slug = this.settings.useSlugSuffix ? `-${slugify(title)}` : '';
 		const filename = `${timestamp}${slug}.md`;
@@ -35,7 +40,9 @@ export class NoteManager {
 		const displayProperty = schema.displayProperty ?? 'title';
 
 		for (const prop of schema.properties) {
-			if (prop.key === displayProperty) {
+			if (values && values[prop.key] !== undefined) {
+				frontmatter[prop.key] = values[prop.key];
+			} else if (prop.key === displayProperty) {
 				frontmatter[prop.key] = title;
 			} else if (prop.default !== undefined) {
 				frontmatter[prop.key] = prop.default;

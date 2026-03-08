@@ -85,6 +85,18 @@
 	padding: var(--size-4-1) 0;
 }
 
+/* Text input modal */
+.typed-notes-text-input {
+	width: 100%;
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	margin-bottom: var(--size-4-2);
+}
+
 /* Batch progress */
 .typed-notes-progress-bar {
 	width: 100%;
