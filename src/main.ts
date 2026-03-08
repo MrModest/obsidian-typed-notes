@@ -423,19 +423,28 @@ export default class TypedNotesPlugin extends Plugin {
 
 		// Filter to this type
 		baseConfig.filters = {
-			and: [`type = "${schema.id}"`],
+			and: [`type == "${schema.id}"`],
 		};
 
-		// Properties with display names
+		// Formula to show display property as a link
+		const displayProp = schema.displayProperty || 'title';
+		baseConfig.formulas = {
+			[displayProp.charAt(0).toUpperCase() + displayProp.slice(1)]:
+				`file.asLink(file.properties.${displayProp})`,
+		};
+
+		// Properties with display names (exclude the display property shown via formula)
 		const properties: Record<string, { displayName: string }> = {};
 		for (const prop of schema.properties) {
+			if (prop.key === displayProp) continue;
 			const displayName = prop.displayName || prop.key;
 			properties[prop.key] = { displayName };
 		}
 		baseConfig.properties = properties;
 
 		// Default table view with all properties in order
-		const order = ['file.name', ...schema.properties.map((p) => p.key)];
+		const formulaName = displayProp.charAt(0).toUpperCase() + displayProp.slice(1);
+		const order = [`formula.${formulaName}`, ...schema.properties.filter((p) => p.key !== displayProp).map((p) => p.key)];
 		baseConfig.views = [
 			{
 				type: 'table',
