@@ -85,6 +85,33 @@
 	padding: var(--size-4-1) 0;
 }
 
+/* Note edit/create modal — grid layout for setting rows */
+.typed-notes-note-modal .setting-item {
+	display: grid;
+	grid-template-columns: 1fr 2fr;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.typed-notes-note-modal .setting-item-info {
+	min-width: 0;
+}
+
+.typed-notes-note-modal .setting-item-control {
+	justify-self: stretch;
+}
+
+.typed-notes-note-modal .setting-item-control input[type="text"],
+.typed-notes-note-modal .setting-item-control input[type="number"],
+.typed-notes-note-modal .setting-item-control input[type="date"],
+.typed-notes-note-modal .setting-item-control input[type="datetime-local"] {
+	width: 100%;
+}
+
+.typed-notes-note-modal .setting-item-control select {
+	width: auto;
+}
+
 /* Text input modal */
 .typed-notes-text-input {
 	width: 100%;

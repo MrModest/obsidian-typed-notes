@@ -10,6 +10,7 @@ import { SchemaEditorModal } from './ui/SchemaEditorModal';
 import { TypePickerModal } from './ui/TypePickerModal';
 import { BulkUpdateModal } from './ui/BulkUpdateModal';
 import { CreateNoteModal } from './ui/CreateNoteModal';
+import { EditNoteModal } from './ui/EditNoteModal';
 import { ConfirmModal } from './ui/ConfirmModal';
 
 export default class TypedNotesPlugin extends Plugin {
@@ -78,6 +79,16 @@ export default class TypedNotesPlugin extends Plugin {
 			id: 'delete-note-type',
 			name: 'Delete note type',
 			callback: () => this.deleteNoteType(),
+		});
+
+		this.addCommand({
+			id: 'edit-note-properties',
+			name: 'Edit note properties',
+			checkCallback: (checking: boolean) => {
+				const file = this.app.workspace.getActiveFile();
+				if (checking) return !!file;
+				if (file) this.editNoteProperties(file);
+			},
 		});
 
 		this.addCommand({
@@ -334,6 +345,36 @@ export default class TypedNotesPlugin extends Plugin {
 				new Notice(`Set type to "${schema.name}"`);
 			}
 		).open();
+	}
+
+	private editNoteProperties(file: TFile): void {
+		const cache = this.app.metadataCache.getFileCache(file);
+		const typeId = cache?.frontmatter?.['type'] as string | undefined;
+
+		if (!typeId) {
+			new Notice('This note has no type. Use "Set note type" first.');
+			return;
+		}
+
+		const schema = this.schemaEngine.getSchema(typeId);
+		if (!schema) {
+			new Notice(`Unknown type "${typeId}". Define it first or reload types.`);
+			return;
+		}
+
+		const currentValues: Record<string, unknown> = {};
+		if (cache?.frontmatter) {
+			for (const prop of schema.properties) {
+				if (cache.frontmatter[prop.key] !== undefined) {
+					currentValues[prop.key] = cache.frontmatter[prop.key];
+				}
+			}
+		}
+
+		new EditNoteModal(this.app, schema, currentValues, async (values) => {
+			await this.frontmatterManager.setProperties(file, values);
+			new Notice('Properties updated');
+		}).open();
 	}
 
 	private async reloadTypes(): Promise<void> {
