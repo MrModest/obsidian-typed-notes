@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type TypedNotesPlugin from './main';
 import { SchemaEditorModal } from './ui/SchemaEditorModal';
+import { FolderSuggest } from './ui/FolderSuggest';
 import type { TypeSchema } from './types';
 
 export class TypedNotesSettingTab extends PluginSettingTab {
@@ -20,15 +21,16 @@ export class TypedNotesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Ghost root folder')
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder('_data')
 					.setValue(this.plugin.settings.ghostRoot)
 					.onChange(async (value) => {
 						this.plugin.settings.ghostRoot = value;
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+				new FolderSuggest(this.app, text.inputEl);
+			});
 
 		new Setting(containerEl)
 			.setName('Slug suffix')
@@ -62,15 +64,16 @@ export class TypedNotesSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.moveOnPromotion) {
 			new Setting(containerEl)
 				.setName('Promotion target folder')
-				.addText((text) =>
+				.addText((text) => {
 					text
 						.setPlaceholder('leave empty for vault root')
 						.setValue(this.plugin.settings.promotionTarget)
 						.onChange(async (value) => {
 							this.plugin.settings.promotionTarget = value;
 							await this.plugin.saveSettings();
-						})
-				);
+						});
+					new FolderSuggest(this.app, text.inputEl);
+				});
 		}
 
 		// --- Registered Types ---

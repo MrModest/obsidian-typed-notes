@@ -11,7 +11,6 @@ export class SchemaEditorModal extends Modal {
 	private name = '';
 	private icon = '';
 	private displayProperty = 'title';
-	private folder = '';
 	private properties: PropertyDefinition[] = [];
 
 	constructor(
@@ -30,7 +29,6 @@ export class SchemaEditorModal extends Modal {
 			this.name = schema.name;
 			this.icon = schema.icon ?? '';
 			this.displayProperty = schema.displayProperty ?? 'title';
-			this.folder = schema.folder ?? '';
 			this.properties = schema.properties.map((p) => ({ ...p }));
 		}
 	}
@@ -78,12 +76,6 @@ export class SchemaEditorModal extends Modal {
 				text.setValue(this.displayProperty).onChange(
 					(v) => (this.displayProperty = v)
 				);
-			});
-
-		new Setting(contentEl)
-			.setName('Ghost Folder')
-			.addText((text: TextComponent) => {
-				text.setValue(this.folder).onChange((v) => (this.folder = v));
 			});
 
 		// Properties list
@@ -173,8 +165,6 @@ export class SchemaEditorModal extends Modal {
 		if (this.icon.trim()) schema.icon = this.icon.trim();
 		if (this.displayProperty.trim())
 			schema.displayProperty = this.displayProperty.trim();
-		if (this.folder.trim()) schema.folder = this.folder.trim();
-
 		this.onSave(schema, applyToNotes);
 		this.close();
 	}

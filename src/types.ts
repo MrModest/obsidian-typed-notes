@@ -5,8 +5,6 @@ export interface TypeSchema {
 	name: string;
 	/** Lucide icon name for visual distinction */
 	icon?: string;
-	/** Subfolder name within the ghost root for this type's ghost files */
-	folder?: string;
 	/** Property key used as the displayed filename (e.g., 'title', 'name'). Defaults to 'title'. */
 	displayProperty?: string;
 	/** Ordered list of property definitions */

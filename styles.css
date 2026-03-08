@@ -1,6 +1,17 @@
 /* Typed Notes Plugin Styles */
 
 /* Schema editor modal */
+.typed-notes-schema-editor .modal-content {
+	padding-bottom: var(--size-4-4);
+}
+
+.typed-notes-schema-editor .typed-notes-properties-list {
+	margin-bottom: var(--size-4-4);
+}
+
+.typed-notes-options-section {
+	margin-bottom: var(--size-4-4);
+}
 .typed-notes-schema-editor .typed-notes-property-row {
 	display: flex;
 	align-items: center;
@@ -20,19 +31,19 @@
 }
 
 /* Type picker suggestion */
-.typed-notes-suggestion {
+.typed-notes-type-suggestion {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
 }
 
-.typed-notes-suggestion-icon {
+.typed-notes-type-icon {
 	display: flex;
 	align-items: center;
 	color: var(--text-muted);
 }
 
-.typed-notes-suggestion-hint {
+.typed-notes-type-hint {
 	color: var(--text-muted);
 	font-size: var(--font-smallest);
 }

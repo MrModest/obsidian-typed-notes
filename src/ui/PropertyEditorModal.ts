@@ -19,8 +19,9 @@ export class PropertyEditorModal extends Modal {
 
 	private key = '';
 	private displayName = '';
+	private keyManuallyEdited = false;
 	private type: PropertyType = 'text';
-	private defaultValue = '';
+	private defaultValue: unknown = undefined;
 	private required = false;
 	private options: SelectOption[] = [];
 
@@ -36,32 +37,46 @@ export class PropertyEditorModal extends Modal {
 		if (property) {
 			this.key = property.key;
 			this.displayName = property.displayName ?? '';
+			this.keyManuallyEdited = true;
 			this.type = property.type;
-			this.defaultValue =
-				property.default != null ? String(property.default) : '';
+			this.defaultValue = property.default;
 			this.required = property.required ?? false;
 			this.options = property.options ? [...property.options] : [];
 		}
 	}
 
 	onOpen(): void {
+		this.render();
+	}
+
+	private render(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.createEl('h3', {
 			text: this.property ? 'Edit Property' : 'Add Property',
 		});
 
-		new Setting(contentEl).setName('Key').addText((text: TextComponent) => {
-			text.setValue(this.key).onChange((v) => (this.key = v));
-		});
+		let keyInput: TextComponent;
 
 		new Setting(contentEl)
 			.setName('Display Name')
 			.addText((text: TextComponent) => {
-				text.setValue(this.displayName).onChange(
-					(v) => (this.displayName = v)
-				);
+				text.setValue(this.displayName).onChange((v) => {
+					this.displayName = v;
+					if (!this.keyManuallyEdited) {
+						this.key = v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+						keyInput.setValue(this.key);
+					}
+				});
 			});
+
+		new Setting(contentEl).setName('Key').addText((text: TextComponent) => {
+			keyInput = text;
+			text.setValue(this.key).onChange((v) => {
+				this.key = v;
+				this.keyManuallyEdited = true;
+			});
+		});
 
 		new Setting(contentEl)
 			.setName('Type')
@@ -71,17 +86,12 @@ export class PropertyEditorModal extends Modal {
 				}
 				dropdown.setValue(this.type).onChange((v) => {
 					this.type = v as PropertyType;
-					this.renderOptions(contentEl);
+					this.defaultValue = undefined;
+					this.render();
 				});
 			});
 
-		new Setting(contentEl)
-			.setName('Default Value')
-			.addText((text: TextComponent) => {
-				text.setValue(this.defaultValue).onChange(
-					(v) => (this.defaultValue = v)
-				);
-			});
+		this.renderDefaultField(contentEl);
 
 		new Setting(contentEl)
 			.setName('Required')
@@ -97,9 +107,7 @@ export class PropertyEditorModal extends Modal {
 			btn.setButtonText('Save')
 				.setCta()
 				.onClick(() => {
-					if (!this.key.trim()) {
-						return;
-					}
+					if (!this.key.trim()) return;
 					const def: PropertyDefinition = {
 						key: this.key.trim(),
 						type: this.type,
@@ -107,8 +115,8 @@ export class PropertyEditorModal extends Modal {
 					if (this.displayName.trim()) {
 						def.displayName = this.displayName.trim();
 					}
-					if (this.defaultValue.trim()) {
-						def.default = this.defaultValue.trim();
+					if (this.defaultValue !== undefined && this.defaultValue !== '' && this.defaultValue !== false) {
+						def.default = this.defaultValue;
 					}
 					if (this.required) {
 						def.required = true;
@@ -125,12 +133,102 @@ export class PropertyEditorModal extends Modal {
 		});
 	}
 
-	private renderOptions(contentEl: HTMLElement): void {
-		const existing = contentEl.querySelector(
-			'.typed-notes-options-section'
-		);
-		if (existing) existing.remove();
+	private renderDefaultField(contentEl: HTMLElement): void {
+		switch (this.type) {
+			case 'checkbox': {
+				const val = this.defaultValue === true;
+				new Setting(contentEl)
+					.setName('Default Value')
+					.addToggle((toggle) => {
+						toggle.setValue(val).onChange((v) => {
+							this.defaultValue = v;
+						});
+					});
+				break;
+			}
 
+			case 'number': {
+				const val = this.defaultValue != null ? String(this.defaultValue) : '';
+				new Setting(contentEl)
+					.setName('Default Value')
+					.addText((text: TextComponent) => {
+						text.inputEl.type = 'number';
+						text.setValue(val).onChange((v) => {
+							this.defaultValue = v ? Number(v) : undefined;
+						});
+					});
+				break;
+			}
+
+			case 'select': {
+				const val = this.defaultValue != null ? String(this.defaultValue) : '';
+				if (this.options.length > 0) {
+					new Setting(contentEl)
+						.setName('Default Value')
+						.addDropdown((dropdown: DropdownComponent) => {
+							dropdown.addOption('', '(none)');
+							for (const opt of this.options) {
+								dropdown.addOption(opt.value, opt.value);
+							}
+							dropdown.setValue(val).onChange((v) => {
+								this.defaultValue = v || undefined;
+							});
+						});
+				} else {
+					new Setting(contentEl)
+						.setName('Default Value')
+						.addText((text: TextComponent) => {
+							text.setPlaceholder('Add options first or type a value')
+								.setValue(val)
+								.onChange((v) => {
+									this.defaultValue = v || undefined;
+								});
+						});
+				}
+				break;
+			}
+
+			case 'date':
+			case 'datetime': {
+				const val = this.defaultValue != null ? String(this.defaultValue) : '';
+				new Setting(contentEl)
+					.setName('Default Value')
+					.addText((text: TextComponent) => {
+						text.inputEl.type = this.type === 'date' ? 'date' : 'datetime-local';
+						text.setValue(val).onChange((v) => {
+							this.defaultValue = v || undefined;
+						});
+					});
+				break;
+			}
+
+			case 'multiselect':
+			case 'tags':
+			case 'aliases':
+			case 'list':
+				// List types: no default value field (too complex for a simple input)
+				break;
+
+			case 'relation':
+				// Relation defaults don't make sense
+				break;
+
+			default: {
+				// text, url
+				const val = this.defaultValue != null ? String(this.defaultValue) : '';
+				new Setting(contentEl)
+					.setName('Default Value')
+					.addText((text: TextComponent) => {
+						text.setValue(val).onChange((v) => {
+							this.defaultValue = v || undefined;
+						});
+					});
+				break;
+			}
+		}
+	}
+
+	private renderOptions(contentEl: HTMLElement): void {
 		if (this.type !== 'select' && this.type !== 'multiselect') return;
 
 		const section = contentEl.createDiv({
@@ -147,7 +245,7 @@ export class PropertyEditorModal extends Modal {
 						.setWarning()
 						.onClick(() => {
 							this.options.splice(i, 1);
-							this.renderOptions(contentEl);
+							this.render();
 						});
 				});
 		}
@@ -166,7 +264,7 @@ export class PropertyEditorModal extends Modal {
 						value: val,
 						order: this.options.length,
 					});
-					this.renderOptions(contentEl);
+					this.render();
 				}
 			});
 		});

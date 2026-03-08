@@ -21,7 +21,7 @@ export class NoteManager {
 
 		let folder: string;
 		if (ghost) {
-			const subfolder = schema.folder || schema.id;
+			const subfolder = schema.id;
 			folder = normalizePath(`${this.settings.ghostRoot}/${subfolder}`);
 		} else {
 			folder = '';
